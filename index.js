@@ -1,15 +1,38 @@
+require("dotenv").config();
+
 const express = require("express");
-const database = require("./database");
+
+const mongoose = require("mongoose");
+
+const database = require("./database/database");
+const bookModal = require("./database/book");
+const authorModal = require("./database/author");
+const publicationModal = require("./database/publication");
+
 const bodyParser = require("body-parser");
+
 const booker = express();
+
 booker.use(bodyParser.urlencoded({ extended: true }));
 booker.use(bodyParser.json());
+
+
+//connecting to mongodb
+mongoose.connect(process.env.mongo_url).then(() => console.log("Connection is established"));
+
 
 ///////////////////////// GET METHODS ///////////////////////////////
 
 //to get all the books
-booker.get("/", (req, res) => {
-   return res.json({ data: database });
+booker.get("/", async (req, res) => {
+   const getallbooks = await bookModal.find();
+   return res.json(getallbooks);
+})
+
+//to get all the publications
+booker.get("/publication", async (req, res) => {
+   const getallpublication = await publicationModal.find();
+   return res.json(getallpublication);
 })
 
 /*
@@ -20,14 +43,14 @@ Parameter -             isbn
 Method -                get
 */
 
-booker.get("/is/:isbn", (req, res) => {
-   const getspecificbook = database.books.filter(
-      (book) => book.ISBN === req.params.isbn
+booker.get("/is/:isbn", async(req, res) => {
+   const getspecificbook = await bookModal.findone(
+      {isbn: req.params.isbn}
    );
-   if (getspecificbook.length === 0) {
+   if (!getspecificbook) {
       return res.json({ error: `NO book found for the isbn of ${req.params.isbn}` });
    }
-   return res.json({ book: getspecificbook });
+   return res.json(getspecificbook );
 })
 
 /*
@@ -38,33 +61,17 @@ Parameter -             category
 Method -                get
 */
 
-booker.get("/ca/:category", (req, res) => {
-   const getspecificbook = database.books.filter(
-      (book) => book.category.includes(req.params.category)
+booker.get("/ca/:category", async(req, res) => {
+   const getspecificbook = await bookModal.findone(
+      {category: req.params.category}
    );
-   if (getspecificbook.length === 0) {
+   if (!getspecificbook) {
       return res.json({ error: `NO book found for the category of ${req.params.category}` });
    }
    return res.json({ book: getspecificbook });
 })
 
-/*
-Route -                 /la
-Description -           Get specific book on languages
-Access -                Public
-Parameter -             language
-Method -                get
-*/
 
-booker.get("/la/:language", (req, res) => {
-   const getspecificbook = database.books.filter(
-      (book) => book.language === req.params.language
-   );
-   if (getspecificbook.length === 0) {
-      return res.json({ error: `NO book found for the language of ${req.params.language}` });
-   }
-   return res.json({ book: getspecificbook });
-})
 
 /*
 Route -                 /author
@@ -73,27 +80,14 @@ Access -                Public
 Parameter -             none
 Method -                get
 */
-booker.get("/author", ((req, res) => {
-   return res.json({ data: database.author })
-}))
+booker.get("/author", async (req, res) => {
+   const getAllAuthors = await authorModal.find();
+   return res.json(getAllAuthors)
+});
 
 
 
 
-/*
-Route -                 /
-Description -           Get list of books of an specific author
-Access -                Public
-Parameter -             author
-Method -                get
-*/
-booker.get("/:authorname", (req, res) => {
-   const getspecificauthor = database.author.filter(
-      (author) => author.name === req.params.authorname
-   )
-   return res.json({ books: getspecificauthor })
-
-})
 
 /////////////////////// POST METHODS /////////////////////////
 
@@ -105,10 +99,11 @@ Parameter -             none
 Method -                post
 */
 
-booker.post("/book/new", (req, res) => {
-   const newbook = req.body;
-   database.books.push(newbook);
-   return res.json({ updated: database.books });
+booker.post("/book/new",async (req, res) => {
+   const {newbook} = req.body;
+   const addNewBook =bookModal.create(newbook);
+      return res.json({ updated: addNewBook,
+                        message: "new book added ...." });
 });
 
 /*
@@ -119,57 +114,57 @@ Parameter -             none
 Method -                post
 */
 
-booker.post("/author/new", (req, res) => {
-   const newAuthor = req.body;
-   database.author.push(newAuthor);
-   return res.json({ updated: database.author });
+booker.post("/author/new", async (req, res) => {
+   const {newauthor} = req.body;
+   const addNewAuthor = await authorModal.create(newauthor);
+
+   return res.json({ updated: addNewAuthor ,
+                     message:"new author added to database" });
 });
 
-/*
-Route -                 /pub/new
-Description -           to add new publication
-Access -                Public
-Parameter -             none
-Method -                post
-*/
 
-booker.post("/pub/new", (req, res) => {
-   const newPublication = req.body;
-   database.publications.push(newPublication);
-   return res.json({ updated: database.publications });
-});
 
 /////////////////// PUT ////////////////////////
 
 /*
-Route -                 /pubblication/update/book
-Description -           to update/add new publication
+Route -                 /book/update/book
+Description -           to update book
+Access -                Public
+Parameter -             isbn
+Method -                put
+*/
+booker.put("book/update/:isbn", async(req,res)=>{
+   const updatedBook = await bookModal.findOneAndUpdate(
+      {isbn : req.params.isbn},
+      {title: req.params.booktitle},
+      {new: true}
+   );
+   return res.json({books:updatedBook});
+ });
+/*
+Route -                 /book/author/update/book
+Description -           to update/add new author
 Access -                Public
 Parameter -             isbn
 Method -                put
 */
 
-booker.put("/publication/update/book/:isbn", (req, res) => {
-   database.publications.forEach((pub) => {
-      if (pub.id === req.body.id) {
-         return pub.book.push(req.params.isbn);
-      }
-   })
+booker.put("book/author/update/:isbn",async(req,res)=>{
+   //update book database
+   const updatedBook = await bookModal.findOneAndUpdate(
+      {isbn:req.params.isbn},
+      {$addToSet:{author:req.body.newAuthor}},
+      {new:true}
+   );
 
-   database.books.forEach((book) => {
-      if (book.ISBN === req.params.isbn) {
-         book.publications = req.body.publications;
-         return;
-      }
-   })
-
-   return res.json({
-      books: database.books,
-      publications: database.publications,
-      message: "Successfully updated Publications"
-   })
+   //update author database
+   const updatedAuthor = await authorModal.findOneAndUpdate(
+      {id:req.body.author},
+      {$addToSet:{book:req.params.isbn}},
+      {new:true}
+   );
+ return res.json({message:"updated"})
 })
-
 
 //////////////////// DELETE ////////////////////////
 
@@ -181,46 +176,12 @@ Access -                Public
 Parameter -             isbn
 Method -                delete
 */
-booker.delete("/book/delete/:isbn", (req, res) => {
-   const updatedbookdatabase = database.books.filter(
-      (book) => book.ISBN !== res.params.isbn)
-   database.books = updatedbookdatabase;
-   return res.json({ books: database.books });
-})
-
-/*
-Route -                 /book/delete/author
-Description -           to delete an author from a book and vice versa
-Access -                Public
-Parameter -             isbn,author
-Method -                delete
-*/
-booker.delete("/book/delete/author/:isbn/:id", (req, res) => {
-   database.books.forEach((book) => {
-      if (book.isbn === req.params.isbn) {
-         const newAuthorList = book.author.filter((eachAuthor) =>
-            eachAuthor !== parseInt(req.params.id));
-         book.author = newAuthorList;
-         return;
-      }
-   });
-
-   database.author.forEach(
-      (eachAuthor) => {
-         if (eachAuthor.id === parseInt(req.params.id)) {
-            const newBookList = eachAuthor.books.filter((book) =>
-               book !== req.params.isbn);
-            eachAuthor.books = newBookList;
-            return;
-         };
-      }
+booker.delete("/book/delete/:isbn", async(req, res) => {
+   const updatedbookdatabase = await bookModal.findOneAndDelete(
+      { isbn: req.params.isbn}
    )
-      return res.json({
-         book: database.books,
-         author : database.author,
-         message :"author deleted",
-      });
-
+   return res.json({ books:updatedbookdatabase });
 })
+
 
 booker.listen(3000, () => console.log(`Server running at http://localhost:3000/`));
